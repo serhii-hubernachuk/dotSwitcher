@@ -36,7 +36,7 @@ namespace dotSwitcher.Data
             }
             if (settings.ConvertSelectionHotkey.KeyData == Keys.None)
             {
-                settings.ConvertSelectionHotkey = new KeyboardEventArgs(Keys.Pause | Keys.Shift, false);
+                settings.ConvertSelectionHotkey = new KeyboardEventArgs(Keys.Insert | Keys.Control, false);
             }
             if (settings.ShowTrayIcon == null)
             {

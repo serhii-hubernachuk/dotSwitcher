@@ -24,7 +24,6 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.ComponentModel;
-using IWshRuntimeLibrary;
 using System.Reflection;
 using System.Windows.Automation;
 using System.Collections.Generic;
@@ -205,8 +204,9 @@ namespace dotSwitcher.WinApi
             {
                 return;
             }
-            WshShell shell = new WshShell();
-            IWshShortcut shortcut = (IWshShortcut)shell.CreateShortcut(shortcutLocation);
+            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+            dynamic shell = Activator.CreateInstance(shellType);
+            dynamic shortcut = shell.CreateShortcut(shortcutLocation);
             shortcut.Description = description;
             shortcut.TargetPath = currentPath;
             shortcut.Save();
