@@ -1,4 +1,4 @@
-﻿/**
+/**
  *   DotSwitcher: a simple keyboard layout switcher
  *   Copyright (C) 2014-2019 Kirill Mokhovtsev / kurumpa
  *   Contact: kiev.programmer@gmail.com
@@ -16,10 +16,11 @@
  *   You should have received a copy of the GNU General Public License
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 using System;
 using System.Diagnostics;
 using System.Runtime.Serialization;
+using System.Text;
 using System.Windows.Forms;
 
 namespace dotSwitcher.Data
@@ -68,23 +69,129 @@ namespace dotSwitcher.Data
 
         public override int GetHashCode()
         {
-            return (int)(base.GetHashCode() ^  Win.GetHashCode());
+            return (int)(base.GetHashCode() ^ Win.GetHashCode());
         }
 
         public bool HasModifiers()
         {
             return Modifiers != Keys.None || Win;
         }
+
         public override string ToString()
         {
-            var result =
-                (Shift ? Keys.Shift.ToString() + " + " : "") +
-                (Control ? Keys.Control.ToString() + " + " : "") +
-                (Alt ? Keys.Alt.ToString() + " + " : "") +
-                (Win ? "Win + " : "") +
-                ((Keys)KeyCode).ToString();
-            // TODO: add more readable key names (Oem-stuff and so on)
-            return result.Replace("Cancel", "Pause");
+            if (KeyData == Keys.None)
+            {
+                return "None";
+            }
+
+            var vk = KeyCode;
+
+            // Handle modifier keys alone or combinations of modifiers
+            bool isCtrlKey = vk == Keys.LControlKey || vk == Keys.RControlKey || vk == Keys.ControlKey;
+            bool isShiftKey = vk == Keys.LShiftKey || vk == Keys.RShiftKey || vk == Keys.ShiftKey;
+            bool isAltKey = vk == Keys.LMenu || vk == Keys.RMenu || vk == Keys.Menu;
+            bool isWinKey = vk == Keys.LWin || vk == Keys.RWin;
+
+            if (isCtrlKey || isShiftKey || isAltKey || isWinKey)
+            {
+                bool hasCtrl = Control || isCtrlKey;
+                bool hasShift = Shift || isShiftKey;
+                bool hasAlt = Alt || isAltKey;
+                bool hasWin = Win || isWinKey;
+
+                int modCount = (hasCtrl ? 1 : 0) + (hasShift ? 1 : 0) + (hasAlt ? 1 : 0) + (hasWin ? 1 : 0);
+                if (modCount > 1)
+                {
+                    var sbMods = new StringBuilder();
+                    if (hasCtrl) sbMods.Append("Ctrl + ");
+                    if (hasAlt) sbMods.Append("Alt + ");
+                    if (hasShift) sbMods.Append("Shift + ");
+                    if (hasWin) sbMods.Append("Win + ");
+                    return sbMods.ToString().TrimEnd(' ', '+');
+                }
+
+                if (vk == Keys.LControlKey) return "Left Ctrl";
+                if (vk == Keys.RControlKey) return "Right Ctrl";
+                if (vk == Keys.ControlKey) return "Ctrl";
+                if (vk == Keys.LShiftKey) return "Left Shift";
+                if (vk == Keys.RShiftKey) return "Right Shift";
+                if (vk == Keys.ShiftKey) return "Shift";
+                if (vk == Keys.LMenu) return "Left Alt";
+                if (vk == Keys.RMenu) return "Right Alt";
+                if (vk == Keys.Menu) return "Alt";
+                if (isWinKey) return "Win";
+            }
+
+            var sb = new StringBuilder();
+            if (Control) sb.Append("Ctrl + ");
+            if (Alt) sb.Append("Alt + ");
+            if (Shift) sb.Append("Shift + ");
+            if (Win) sb.Append("Win + ");
+
+            string keyName;
+            switch (vk)
+            {
+                case Keys.Cancel:
+                    keyName = "Pause";
+                    break;
+                case Keys.Return:
+                    keyName = "Enter";
+                    break;
+                case Keys.Back:
+                    keyName = "Backspace";
+                    break;
+                case Keys.Escape:
+                    keyName = "Esc";
+                    break;
+                case Keys.Capital:
+                    keyName = "CapsLock";
+                    break;
+                case Keys.Prior:
+                    keyName = "PageUp";
+                    break;
+                case Keys.Next:
+                    keyName = "PageDown";
+                    break;
+                case Keys.Oemtilde:
+                    keyName = "~";
+                    break;
+                case Keys.OemQuestion:
+                    keyName = "/";
+                    break;
+                case Keys.OemPeriod:
+                    keyName = ".";
+                    break;
+                case Keys.Oemcomma:
+                    keyName = ",";
+                    break;
+                case Keys.OemMinus:
+                    keyName = "-";
+                    break;
+                case Keys.Oemplus:
+                    keyName = "+";
+                    break;
+                case Keys.Oem1:
+                    keyName = ";";
+                    break;
+                case Keys.OemOpenBrackets:
+                    keyName = "[";
+                    break;
+                case Keys.Oem6:
+                    keyName = "]";
+                    break;
+                case Keys.Oem7:
+                    keyName = "'";
+                    break;
+                case Keys.Oem5:
+                    keyName = "\\";
+                    break;
+                default:
+                    keyName = vk.ToString();
+                    break;
+            }
+
+            sb.Append(keyName);
+            return sb.ToString();
         }
 
         public void GetObjectData(SerializationInfo info, StreamingContext context)

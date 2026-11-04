@@ -1,4 +1,4 @@
-﻿/**
+/**
  *   DotSwitcher: a simple keyboard layout switcher
  *   Copyright (C) 2014-2019 Kirill Mokhovtsev / kurumpa
  *   Contact: kiev.programmer@gmail.com
@@ -101,11 +101,16 @@ namespace dotSwitcher.Switcher
                         }
                         var keyData = (Keys)kbd.VkCode;
 
-                        keyData |= LowLevelAdapter.KeyPressed(Keys.ControlKey) ? Keys.Control : 0;
-                        keyData |= LowLevelAdapter.KeyPressed(Keys.Menu) ? Keys.Alt : 0;
-                        keyData |= LowLevelAdapter.KeyPressed(Keys.ShiftKey) ? Keys.Shift : 0;
+                        var isCtrl = (kbd.VkCode == (int)Keys.LControlKey || kbd.VkCode == (int)Keys.RControlKey || kbd.VkCode == (int)Keys.ControlKey);
+                        var isShift = (kbd.VkCode == (int)Keys.LShiftKey || kbd.VkCode == (int)Keys.RShiftKey || kbd.VkCode == (int)Keys.ShiftKey);
+                        var isAlt = (kbd.VkCode == (int)Keys.LMenu || kbd.VkCode == (int)Keys.RMenu || kbd.VkCode == (int)Keys.Menu);
 
-                        var winPressed = LowLevelAdapter.KeyPressed(Keys.LWin) || LowLevelAdapter.KeyPressed(Keys.RWin);
+                        keyData |= (isCtrl || LowLevelAdapter.KeyPressed(Keys.ControlKey)) ? Keys.Control : 0;
+                        keyData |= (isAlt || LowLevelAdapter.KeyPressed(Keys.Menu)) ? Keys.Alt : 0;
+                        keyData |= (isShift || LowLevelAdapter.KeyPressed(Keys.ShiftKey)) ? Keys.Shift : 0;
+
+                        var winPressed = LowLevelAdapter.KeyPressed(Keys.LWin) || LowLevelAdapter.KeyPressed(Keys.RWin)
+                            || kbd.VkCode == (int)Keys.LWin || kbd.VkCode == (int)Keys.RWin;
 
                         var args = new KeyboardEventArgs(keyData, winPressed, isKeyDownEvent ? KeyboardEventType.KeyDown : KeyboardEventType.KeyUp);
                         OnKeyboardEvent(args);

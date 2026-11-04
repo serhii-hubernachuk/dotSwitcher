@@ -61,6 +61,8 @@ namespace dotSwitcher.UI
         void ShowForm()
         {
             engine.Stop();
+            currentHotkeyType = HotKeyType.None;
+            currentHotkey = null;
             kbdHook.Start();
             icon.Hide();
             TopMost = true;
@@ -70,6 +72,8 @@ namespace dotSwitcher.UI
         void HideForm()
         {
             kbdHook.Stop();
+            currentHotkeyType = HotKeyType.None;
+            currentHotkey = null;
             engine.Start();
             if (settings.ShowTrayIcon == true)
             {
@@ -82,9 +86,9 @@ namespace dotSwitcher.UI
         // Update input values and icon state
         void UpdateUi()
         {
-            textBoxSwitchHotkey.Text = ReplaceCtrls(settings.SwitchHotkey.ToString());
-            textBoxConvertHotkey.Text = settings.ConvertSelectionHotkey.ToString();
-            textBoxSwitchLayoutHotkey.Text = ReplaceCtrls(settings.SwitchLayoutHotkey.ToString());
+            textBoxSwitchHotkey.Text = settings.SwitchHotkey != null ? settings.SwitchHotkey.ToString() : "None";
+            textBoxConvertHotkey.Text = settings.ConvertSelectionHotkey != null ? settings.ConvertSelectionHotkey.ToString() : "None";
+            textBoxSwitchLayoutHotkey.Text = settings.SwitchLayoutHotkey != null ? settings.SwitchLayoutHotkey.ToString() : "None";
             checkBoxAutorun.Checked = settings.AutoStart == true;
             checkBoxTrayIcon.Checked = settings.ShowTrayIcon == true;
             checkBoxSmartSelection.Checked = settings.SmartSelection == true;
@@ -99,6 +103,7 @@ namespace dotSwitcher.UI
         }
         void buttonSaveSettings_Click(object sender, EventArgs e)
         {
+            ApplyCurrentHotkey();
             if (settings.SwitchHotkey.Alt || settings.SwitchHotkey.Win)
             {
                 MessageBox.Show("Sorry, win+ and alt+ hotkeys are not supported yet");
@@ -187,45 +192,68 @@ namespace dotSwitcher.UI
         enum HotKeyType { None, Switch, Convert, SwitchLayout }
         void InitializeHotkeyBoxes()
         {
-            textBoxSwitchHotkey.GotFocus += (s, e) => currentHotkeyType = HotKeyType.Switch;
-            textBoxSwitchHotkey.Enter += (s, e) => currentHotkeyType = HotKeyType.Switch;
+            textBoxSwitchHotkey.GotFocus += (s, e) => { currentHotkeyType = HotKeyType.Switch; currentHotkey = settings.SwitchHotkey; };
+            textBoxSwitchHotkey.Enter += (s, e) => { currentHotkeyType = HotKeyType.Switch; currentHotkey = settings.SwitchHotkey; };
             textBoxSwitchHotkey.LostFocus += (s, e) => ApplyCurrentHotkey();
             textBoxSwitchHotkey.Leave += (s, e) => ApplyCurrentHotkey();
-            textBoxConvertHotkey.GotFocus += (s, e) => currentHotkeyType = HotKeyType.Convert;
-            textBoxConvertHotkey.Enter += (s, e) => currentHotkeyType = HotKeyType.Convert;
+
+            textBoxConvertHotkey.GotFocus += (s, e) => { currentHotkeyType = HotKeyType.Convert; currentHotkey = settings.ConvertSelectionHotkey; };
+            textBoxConvertHotkey.Enter += (s, e) => { currentHotkeyType = HotKeyType.Convert; currentHotkey = settings.ConvertSelectionHotkey; };
             textBoxConvertHotkey.LostFocus += (s, e) => ApplyCurrentHotkey();
             textBoxConvertHotkey.Leave += (s, e) => ApplyCurrentHotkey();
-            textBoxSwitchLayoutHotkey.GotFocus += (s, e) => currentHotkeyType = HotKeyType.SwitchLayout;
-            textBoxSwitchLayoutHotkey.Enter += (s, e) => currentHotkeyType = HotKeyType.SwitchLayout;
+
+            textBoxSwitchLayoutHotkey.GotFocus += (s, e) => { currentHotkeyType = HotKeyType.SwitchLayout; currentHotkey = settings.SwitchLayoutHotkey; };
+            textBoxSwitchLayoutHotkey.Enter += (s, e) => { currentHotkeyType = HotKeyType.SwitchLayout; currentHotkey = settings.SwitchLayoutHotkey; };
             textBoxSwitchLayoutHotkey.LostFocus += (s, e) => ApplyCurrentHotkey();
             textBoxSwitchLayoutHotkey.Leave += (s, e) => ApplyCurrentHotkey();
+
+            textBoxSwitchHotkey.KeyPress += (s, e) => e.Handled = true;
+            textBoxConvertHotkey.KeyPress += (s, e) => e.Handled = true;
+            textBoxSwitchLayoutHotkey.KeyPress += (s, e) => e.Handled = true;
+
             currentHotkeyType = HotKeyType.None;
             kbdHook = new KeyboardHook();
             kbdHook.KeyboardEvent += kbdHook_KeyboardEvent;
         }
+
         void kbdHook_KeyboardEvent(object sender, KeyboardEventArgs e)
         {
-            if (currentHotkeyType != HotKeyType.None)
+            if (currentHotkeyType == HotKeyType.None)
             {
-                var vk = e.KeyCode;
-                if (vk == Keys.Escape || vk == Keys.Back)
-                {
-                    e.Handled = true;
-                    ResetCurrentHotkey(vk == Keys.Back);
-                    return;
-                }
-                if (vk != Keys.LMenu && vk != Keys.RMenu
-                    && vk != Keys.LWin && vk != Keys.RWin
-                    && vk != Keys.LShiftKey && vk != Keys.RShiftKey
-                    && vk != Keys.LControlKey && vk != Keys.RControlKey)
-                {
-                    e.Handled = true;
-                }
-                SetCurrentHotkeyInputText(e.ToString());
-                currentHotkey = e;
+                return;
             }
+
+            // CRITICAL: Only process KeyDown events when recording hotkeys!
+            // When releasing keys in a combination (e.g. Ctrl + Insert or Ctrl + Shift),
+            // processing KeyUp would overwrite the combination with the last released modifier (e.g. "Left Ctrl").
+            if (e.Type == KeyboardEventType.KeyUp)
+            {
+                return;
+            }
+
+            var vk = e.KeyCode;
+
+            // Esc resets to current saved setting; Backspace clears to None
+            if (!e.HasModifiers() && (vk == Keys.Escape || vk == Keys.Back))
+            {
+                e.Handled = true;
+                ResetCurrentHotkey(vk == Keys.Back);
+                return;
+            }
+
+            // Suppress non-modifier keys so they don't trigger default actions or type into the box
+            if (vk != Keys.LMenu && vk != Keys.RMenu
+                && vk != Keys.LWin && vk != Keys.RWin
+                && vk != Keys.LShiftKey && vk != Keys.RShiftKey
+                && vk != Keys.LControlKey && vk != Keys.RControlKey)
+            {
+                e.Handled = true;
+            }
+
+            currentHotkey = e;
+            SetCurrentHotkeyInputText(e.ToString());
         }
-        // TODO: refactor this (make HotkeyInput : TextBox)
+
         void SetCurrentHotkeyInputText(string text)
         {
             TextBox currentTextBox;
@@ -250,13 +278,8 @@ namespace dotSwitcher.UI
 
         private string ReplaceCtrls(string text)
         {
-            return text
-                .Replace("Control + LControlKey", "Left Ctrl")
-                .Replace("Control + RControlKey", "Right Ctrl")
-                .Replace("Shift + LShiftKey", "Left Shift")
-                .Replace("Shift + RShiftKey", "Right Shift")
-                .Replace("Alt + LMenu", "Left Alt")
-                .Replace("Alt + RMenu", "Right Alt");
+            if (string.IsNullOrEmpty(text)) { return "None"; }
+            return text;
         }
 
         void ResetCurrentHotkey(bool clear)
@@ -264,19 +287,19 @@ namespace dotSwitcher.UI
             switch (currentHotkeyType)
             {
                 case HotKeyType.Switch:
-                    currentHotkey = clear ? null : settings.SwitchHotkey;
+                    currentHotkey = clear ? KeyboardEventArgs.Empty : settings.SwitchHotkey;
                     break;
                 case HotKeyType.Convert:
-                    currentHotkey = clear ? null : settings.ConvertSelectionHotkey;
+                    currentHotkey = clear ? KeyboardEventArgs.Empty : settings.ConvertSelectionHotkey;
                     break;
                 case HotKeyType.SwitchLayout:
-                    currentHotkey = clear ? null : settings.SwitchLayoutHotkey;
+                    currentHotkey = clear ? KeyboardEventArgs.Empty : settings.SwitchLayoutHotkey;
                     break;
                 default:
-                    currentHotkey = null;
+                    currentHotkey = KeyboardEventArgs.Empty;
                     break;
             }
-            SetCurrentHotkeyInputText(currentHotkey == null ? "None" : ReplaceCtrls(currentHotkey.ToString()));
+            SetCurrentHotkeyInputText(currentHotkey == null ? "None" : currentHotkey.ToString());
         }
 
         void ApplyCurrentHotkey()
