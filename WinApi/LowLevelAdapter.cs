@@ -1,4 +1,4 @@
-﻿/**
+/**
  *   DotSwitcher: a simple keyboard layout switcher
  *   Copyright (C) 2014-2019 Kirill Mokhovtsev / kurumpa
  *   Contact: kiev.programmer@gmail.com
@@ -25,14 +25,12 @@ using System.Text;
 using System.Threading;
 using System.ComponentModel;
 using System.Reflection;
-using System.Windows.Automation;
 using System.Collections.Generic;
 
 namespace dotSwitcher.WinApi
 {
     public static partial class LowLevelAdapter
     {
-
         public static IntPtr SetHook(int type, HookProc callback)
         {
             var process = Process.GetCurrentProcess();
@@ -76,16 +74,15 @@ namespace dotSwitcher.WinApi
             return GetKeyboardLayout(wndThreadId);
         }
 
-
         public static void SetNextKeyboardLayout()
         {
+            IntPtr fgWnd = GetForegroundWindow();
             IntPtr hWnd = IntPtr.Zero;
-            var threadId = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+            var threadId = GetWindowThreadProcessId(fgWnd, IntPtr.Zero);
             var info = new GUITHREADINFO();
             info.cbSize = Marshal.SizeOf(info);
             var success = GetGUIThreadInfo(threadId, ref info);
 
-            // target = hwndCaret || hwndFocus || (AttachThreadInput + GetFocus) || hwndActive || GetForegroundWindow
             var focusedHandle = GetFocusedHandle();
             if (success)
             {
@@ -110,17 +107,23 @@ namespace dotSwitcher.WinApi
             {
                 hWnd = focusedHandle;
             }
-            if(hWnd == IntPtr.Zero) { hWnd = GetForegroundWindow();  }
+            if (hWnd == IntPtr.Zero) { hWnd = fgWnd; }
 
-            //PostMessage(hWnd, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, HKL_NEXT);
+            // 1. Post language change request to the target window and foreground window
+            PostMessage(hWnd, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, (uint)HKL_NEXT);
+            if (hWnd != fgWnd && fgWnd != IntPtr.Zero)
+            {
+                PostMessage(fgWnd, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, (uint)HKL_NEXT);
+            }
 
+            // 2. Safely simulate Shift + Alt: Shift down FIRST, then Alt down, Alt up FIRST, then Shift up.
+            // Releasing Alt while Shift is still held down guarantees Windows will NEVER trigger menu mode.
             var shiftDown = MakeKeyInput(Keys.LShiftKey, true);
             var shiftUp = MakeKeyInput(Keys.LShiftKey, false);
             var altDown = MakeKeyInput(Keys.LMenu, true);
             var altUp = MakeKeyInput(Keys.LMenu, false);
 
-            SendInput(2, new INPUT[2] { altDown, shiftDown }, Marshal.SizeOf(typeof(INPUT)));
-            SendInput(2, new INPUT[2] { altUp, shiftUp }, Marshal.SizeOf(typeof(INPUT)));
+            SendInput(4, new INPUT[4] { shiftDown, altDown, altUp, shiftUp }, Marshal.SizeOf(typeof(INPUT)));
         }
 
         public static void SendCopy()
@@ -129,9 +132,65 @@ namespace dotSwitcher.WinApi
             var ctrlUp = MakeKeyInput(Keys.LControlKey, false);
             var cDown = MakeKeyInput(Keys.C, true);
             var cUp = MakeKeyInput(Keys.C, false);
-            SendInput(2, new INPUT[2] { ctrlDown, cDown }, Marshal.SizeOf(typeof(INPUT)));
-            Thread.Sleep(20);
-            SendInput(2, new INPUT[2] { ctrlUp, cUp }, Marshal.SizeOf(typeof(INPUT)));
+            SendInput(4, new INPUT[4] { ctrlDown, cDown, cUp, ctrlUp }, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        public static void SendPaste()
+        {
+            var ctrlDown = MakeKeyInput(Keys.LControlKey, true);
+            var ctrlUp = MakeKeyInput(Keys.LControlKey, false);
+            var vDown = MakeKeyInput(Keys.V, true);
+            var vUp = MakeKeyInput(Keys.V, false);
+            SendInput(4, new INPUT[4] { ctrlDown, vDown, vUp, ctrlUp }, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        public static string GetSelectedText()
+        {
+            try
+            {
+                Clipboard.Clear();
+            }
+            catch { }
+
+            SendCopy();
+
+            // Wait up to 250ms with 25ms steps for clipboard to receive text from target app
+            for (int i = 0; i < 10; i++)
+            {
+                Thread.Sleep(25);
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        var text = Clipboard.GetText();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        public static void SetClipboardAndPaste(string text)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    break;
+                }
+                catch
+                {
+                    Thread.Sleep(20);
+                }
+            }
+
+            Thread.Sleep(25);
+            SendPaste();
         }
 
         public static void SendKeyPress(Keys vkCode, bool shift = false)
@@ -149,26 +208,23 @@ namespace dotSwitcher.WinApi
             {
                 SendInput(2, new INPUT[2] { down, up }, Marshal.SizeOf(typeof(INPUT)));
             }
-
         }
 
         public static void ReleasePressedFnKeys()
         {
-            // temp solution
-            //ReleasePressedKey(Keys.LMenu, true),
-            //ReleasePressedKey(Keys.RMenu, true),
-            //ReleasePressedKey(Keys.LWin, true),
-            //ReleasePressedKey(Keys.RWin, true),
             ReleasePressedKey(Keys.RControlKey, false);
             ReleasePressedKey(Keys.LControlKey, false);
             ReleasePressedKey(Keys.LShiftKey, false);
             ReleasePressedKey(Keys.RShiftKey, false);
+            ReleasePressedKey(Keys.LMenu, false);
+            ReleasePressedKey(Keys.RMenu, false);
+            ReleasePressedKey(Keys.LWin, false);
+            ReleasePressedKey(Keys.RWin, false);
         }
 
         public static bool ReleasePressedKey(Keys keyCode, bool releaseTwice)
         {
             if (!KeyPressed(keyCode)) { return false; }
-            //Debug.WriteLine("{0} was down", keyCode);
             var keyUp = MakeKeyInput(keyCode, false);
             if (releaseTwice)
             {
@@ -187,7 +243,6 @@ namespace dotSwitcher.WinApi
         {
             PostMessage((IntPtr)HWND_BROADCAST, WM_SHOW_SETTINGS, 0, 0);
         }
-
 
         private static string GetAutorunPath()
         {
@@ -216,10 +271,6 @@ namespace dotSwitcher.WinApi
             System.IO.File.Delete(GetAutorunPath());
         }
 
-        //static Dictionary<string, object> lBackup = new Dictionary<string, object>();
-        //static IDataObject lDataObject = null;
-        //static string[] lFormats = new string[] {};
-
         public static Keys ToKey(char ch)
         {
             var layout = GetCurrentLayout();
@@ -231,37 +282,5 @@ namespace dotSwitcher.WinApi
             }
             return (System.Windows.Forms.Keys)(((keyNumber & 0xFF00) << 8) | (keyNumber & 0xFF));
         }
-        public static void BackupClipboard()
-        {
-            //lDataObject = Clipboard.GetDataObject();
-            //if (lDataObject == null) 
-            //{
-            //    return;
-            //}
-            //lFormats = lDataObject.GetFormats(false);
-            //lBackup = new Dictionary<string, object>();
-            //foreach(var lFormat in lFormats)
-            //{
-            //  lBackup.Add(lFormat, lDataObject.GetData(lFormat, false));
-            //}
-            //Debug.WriteLine(lDataObject);
-            //Debug.WriteLine(lFormats);
-        }
-
-        public static void RestoreClipboard()
-        {
-            //Debug.WriteLine(lDataObject);
-            //Debug.WriteLine(lFormats);
-            //if (lDataObject == null)
-            //{
-            //    return;
-            //}
-            //foreach (var lFormat in lFormats)
-            //{
-            //    lDataObject.SetData(lBackup[lFormat]);
-            //}
-            //Clipboard.SetDataObject(lDataObject);
-        }
-
     }
 }

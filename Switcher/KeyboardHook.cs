@@ -1,4 +1,4 @@
-/**
+﻿/**
  *   DotSwitcher: a simple keyboard layout switcher
  *   Copyright (C) 2014-2019 Kirill Mokhovtsev / kurumpa
  *   Contact: kiev.programmer@gmail.com
@@ -93,8 +93,13 @@ namespace dotSwitcher.Switcher
                     case LowLevelAdapter.WM_KEYUP:
                     case LowLevelAdapter.WM_SYSKEYUP:
 
-                        var keybdinput = (KEYBDINPUT)Marshal.PtrToStructure(lParam, typeof(KEYBDINPUT));
-                        var keyData = (Keys)keybdinput.Vk;
+                        var kbd = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+                        // Ignore all injected keystrokes (sent by SendInput / dotSwitcher itself)
+                        if ((kbd.Flags & 0x10) != 0)
+                        {
+                            return;
+                        }
+                        var keyData = (Keys)kbd.VkCode;
 
                         keyData |= LowLevelAdapter.KeyPressed(Keys.ControlKey) ? Keys.Control : 0;
                         keyData |= LowLevelAdapter.KeyPressed(Keys.Menu) ? Keys.Alt : 0;

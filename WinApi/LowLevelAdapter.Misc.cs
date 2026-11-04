@@ -168,6 +168,16 @@ namespace dotSwitcher.WinApi
     }
     #pragma warning restore 649
 
+        [StructLayout(LayoutKind.Sequential)]
+    public struct KBDLLHOOKSTRUCT
+    {
+        public UInt32 VkCode;
+        public UInt32 ScanCode;
+        public UInt32 Flags;
+        public UInt32 Time;
+        public IntPtr ExtraInfo;
+    }
+
     public struct GUITHREADINFO
     {
         public int cbSize;

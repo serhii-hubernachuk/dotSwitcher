@@ -47,14 +47,13 @@ namespace dotSwitcher.Switcher
             readyToSwitch = false;
         }
 
-
         public static bool IsPrintable(KeyboardEventArgs evtData)
         {
             if (evtData.Alt || evtData.Control || evtData.Win) { return false; }
             var keyCode = evtData.KeyCode;
             if (keyCode >= Keys.D0 && keyCode <= Keys.Z) { return true; }
             if (keyCode >= Keys.Oem1 && keyCode <= Keys.OemBackslash) { return true; }
-            if (keyCode >= Keys.NumPad0 && keyCode <=Keys.NumPad9) { return true; }
+            if (keyCode >= Keys.NumPad0 && keyCode <= Keys.NumPad9) { return true; }
             if (keyCode == Keys.Decimal) { return true; }
             return false;
         }
@@ -159,6 +158,8 @@ namespace dotSwitcher.Switcher
             if (evtData.Equals(settings.ConvertSelectionHotkey))
             {
                 ConvertSelection();
+                evtData.Handled = true;
+                return;
             }
 
             if (this.HaveTrackingKeys(evtData))
@@ -204,50 +205,45 @@ namespace dotSwitcher.Switcher
 
         private void ConvertSelection()
         {
-            LowLevelAdapter.BackupClipboard();
-            LowLevelAdapter.SendCopy();
-            var selection = Clipboard.GetText();
-            LowLevelAdapter.RestoreClipboard();
+            LowLevelAdapter.ReleasePressedFnKeys();
+            Thread.Sleep(20);
+
+            var selection = LowLevelAdapter.GetSelectedText();
             if (String.IsNullOrEmpty(selection))
             {
                 return;
             }
 
-            
-            LowLevelAdapter.ReleasePressedFnKeys();
-
-            var keys = new List<Keys>(selection.Length);
-            for(var i = 0; i < selection.Length; i++)
+            bool toCyrillic;
+            var converted = LayoutConverter.Convert(selection, out toCyrillic);
+            if (String.IsNullOrEmpty(converted) || converted == selection)
             {
-                keys.Add(LowLevelAdapter.ToKey(selection[i]));
+                return;
             }
+
+            LowLevelAdapter.SetClipboardAndPaste(converted);
+            Thread.Sleep(settings.SwitchDelay);
             LowLevelAdapter.SetNextKeyboardLayout();
-
-            foreach (var key in keys)
-            {
-                Debug.Write(key);
-                if (key != Keys.None)
-                {
-                    LowLevelAdapter.SendKeyPress(key, (key & Keys.Shift) != Keys.None);
-                }
-            }
-
         }
+
         private void SwitchLayout()
         {
             BeginNewSelection();
             LowLevelAdapter.SetNextKeyboardLayout();
         }
+
         private void ConvertLast()
         {
             LowLevelAdapter.ReleasePressedFnKeys();
             var selection = currentSelection.ToList();
+            if (selection.Count == 0) { return; }
+
             var backspaces = Enumerable.Repeat<Keys>(Keys.Back, selection.Count);
 
             foreach (var vkCode in backspaces) { LowLevelAdapter.SendKeyPress(vkCode, false); }
-            // Fix for skype
             Thread.Sleep(settings.SwitchDelay);
             LowLevelAdapter.SetNextKeyboardLayout();
+            Thread.Sleep(settings.SwitchDelay);
             foreach (var data in selection)
             {
                 LowLevelAdapter.SendKeyPress(data.KeyCode, data.Shift);
@@ -268,5 +264,4 @@ namespace dotSwitcher.Switcher
             Error = ex;
         }
     }
-
 }
